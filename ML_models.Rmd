@@ -39,7 +39,16 @@ library(geodata)
 library(dplyr)
 library(ggplot2)
 library(pROC)
+
+
 ```
+
+```{r DATA, warning = FALSE, messages = FALSE}
+
+
+
+```
+
 
 
 
