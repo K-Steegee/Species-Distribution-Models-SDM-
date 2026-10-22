@@ -22,16 +22,23 @@ The MaxEnt algorithm is now finding the probability distribution with the heighe
 Das Beispiel führe ich hier mit dem Datensatz "bradypus" des maxNet-Pakets durch.
 
 ```{r}
-install.packages(c(
-  "maxnet",
-  "terra",
-  "sf",
-  "geodata",
-  "dplyr",
-  "ggplot2",
-  "pROC"
-))
+# install.packages(c(
+#   "maxnet",
+#   "terra",
+#   "sf",
+#   "geodata",
+#   "dplyr",
+#   "ggplot2",
+#   "pROC"
+# ))
 
+library(maxnet)
+library(terra)
+library(msf)
+library(geodata)
+library(dplyr)
+library(ggplot2)
+library(pROC)
 ```
 
 
