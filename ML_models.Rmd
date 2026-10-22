@@ -1,0 +1,39 @@
+---
+title: "Machine Learning Methods"
+author: "Kai Staege"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Maximum Entropy (MaxEnt)
+
+This is based on Shannon's Entropy. In the diversity context it means the probability of finding a certain species in an area where we randomly select individuals, based on the relative abundances. The formula is given by
+
+$H' = -\sum_{i=1}^{S} p_i \ln(p_i)$
+
+where S is the total number of species and p is the probability of finding the species i. A value of H=0 indicates a community containing only one species, whereas higher values indicate greater diversity. For a community with S species, the maximum value, H'_{\max} =ln(S), occurs when all species have equal relative abundance.
+
+The MaxEnt algorithm is now finding the probability distribution with the heighest entropy under given constraints.
+
+Das Beispiel führe ich hier mit dem Datensatz "bradypus" des maxNet-Pakets durch.
+
+```{r}
+install.packages(c(
+  "maxnet",
+  "terra",
+  "sf",
+  "geodata",
+  "dplyr",
+  "ggplot2",
+  "pROC"
+))
+
+```
+
+
+
+
