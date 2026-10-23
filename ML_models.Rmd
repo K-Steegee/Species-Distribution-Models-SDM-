@@ -13,15 +13,21 @@ knitr::opts_chunk$set(echo = TRUE)
 
 This is based on Shannon's Entropy. In the diversity context it means the probability of finding a certain species in an area where we randomly select individuals, based on the relative abundances. The formula is given by
 
-$H' = -\sum_{i=1}^{S} p_i \ln(p_i)$
+$H = -\sum_{i=1}^{S} p_i \ln(p_i)$
 
 where S is the total number of species and p is the probability of finding the species i. A value of H=0 indicates a community containing only one species, whereas higher values indicate greater diversity. For a community with S species, the maximum value, H'_{\max} =ln(S), occurs when all species have equal relative abundance.
 
 The MaxEnt algorithm is now finding the probability distribution with the heighest entropy under given constraints.
 
-Das Beispiel führe ich hier mit dem Datensatz "bradypus" des maxNet-Pakets durch.
+The example is done with the sloth data from the maxnet Package. A dataset containing environmental data at 116 Bradypus variegatus occurrence points and 1000 background points in South and Central America. 
+See:
+- Anderson, R. P. and Handley, Jr., C. O. (2001). A new species of three-toed sloth (Mammalia: Xenarthra) from Panama, with a review of the genus Bradypus. Proceedings of the Biological Society of Washington 114, 1-33.
 
-```{r}
+- Phillips, S. J. et al. (2006). Maximum entropy modeling of species geographic distributions. Ecological Modelling 190, 231-259
+
+# Required Packages
+
+```{r packages, warnings = FALSE, messages = FALSE}
 # install.packages(c(
 #   "maxnet",
 #   "terra",
@@ -31,23 +37,213 @@ Das Beispiel führe ich hier mit dem Datensatz "bradypus" des maxNet-Pakets durc
 #   "ggplot2",
 #   "pROC"
 # ))
+#Standard packages for handling (spatial) data
+library("raster")
+library("ggplot2")
+library("dplyr")
+library("sp")
+
+
+
+#Additionally:
+library("dismo") #for SDM techniques
+library("plotly") #to create interactive plots
+library("reactable") #to prepare an interactive table of a large dataset
 
 library(maxnet)
 library(terra)
-library(msf)
+library(sf)
 library(geodata)
 library(dplyr)
 library(ggplot2)
 library(pROC)
+```
+
+# Data
+Let's first take a look at the data. As you can see there is occurence data of the sloths, which is stored in the column "preseence" which can either be 1 or 0 for yes or no. There is additional background variables, which we use to determine the habitat structure and give to our model.
+
+```{r Data, warning = FALSE, messages = FALSE}
+
+data(bradypus, package = "maxnet")
+
+# Datensatzstruktur untersuchen
+str(bradypus)
+head(bradypus)
+
+names(bradypus)
+summary(bradypus)
 
 
 ```
+Here (all values between 1961 and 1990),
+cld stands for annual cloud cover
+dtr for annual day-night-temperature difference
+ecoreg for categorial ecoregion
+frst for annual occurence of frosting
+h_dem for height
+pre for the precipation for th months (11 for November)
+tmn for the annual minimal temperature
+tmp for the annual mean temperature
+tmx for the annual max temperature
+vap for the Water vapor pressure
 
-```{r DATA, warning = FALSE, messages = FALSE}
+In the next step we separate our data in a test and a training data set
 
+```{r test and train data, wanrings = FALSE, messages = FALSE}
+# create test dataset with 60 % of the data and train d<ta set with the rest
+# creating an ID for the data so we can seperate them
 
+set.seed(42)
+
+brad <- bradypus %>%
+  mutate(ID = row_number())
+
+# 80% train and 20% test for present and absent each
+train_brad <- brad %>%
+  group_by(presence) %>%
+  slice_sample(prop = 0.8) %>%
+  ungroup()
+
+test_brad <- brad %>%
+  filter(!ID %in% train_brad$ID)
+
+# show the distribution
+table(train_brad$presence)
+table(test_brad$presence)
 
 ```
+Next we select the environmental parameters.
+```{r env parameters}
+# not our goal variable
+p_train <- train_brad$presence
+p_test  <- test_brad$presence
+
+# env variables
+x_train <- train_brad %>%
+  select(-presence, -ID)
+
+x_test <- test_brad %>%
+  select(-presence, -ID)
+
+#
+str(x_train)
+summary(x_train)
+
+```
+Now we train our MaxEnt model
+
+```{r train model}
+model <- maxnet(
+  p = p_train,
+  data = x_train,
+  f = maxnet.formula(
+    p_train,
+    x_train,
+    classes = "lqph"
+  )
+)
+
+print(model)
+```
+
+```{r}
+pred_test <- predict(
+  model,
+  newdata = x_test,
+  type = "cloglog"
+)
+
+summary(pred_test)
+
+```
+```{r}
+roc_model <- pROC::roc(
+  response = p_test,
+  predictor = as.numeric(pred_test),
+  levels = c(0, 1),
+  direction = "<",
+  quiet = TRUE
+)
+
+plot(
+  roc_model,
+  main = "ROC curve – MaxEnt"
+)
+
+auc_value <- pROC::auc(roc_model)
+
+print(auc_value)
+```
+
+```{r}
+variable <- "tmp6190_ann"
+
+# Prüfen, ob die Variable existiert
+stopifnot(variable %in% names(x_train))
+
+# Referenzdatensatz erstellen: Median für numerische Variablen,
+# häufigste Kategorie für kategoriale Variablen
+reference <- lapply(x_train, function(x) {
+  if (is.numeric(x)) {
+    median(x, na.rm = TRUE)
+  } else {
+    names(which.max(table(x)))
+  }
+})
+
+reference <- as.data.frame(reference)
+
+# Faktorstruktur von ecoreg beibehalten
+for (nm in names(x_train)) {
+  if (is.factor(x_train[[nm]])) {
+    reference[[nm]] <- factor(
+      reference[[nm]],
+      levels = levels(x_train[[nm]])
+    )
+  }
+}
+
+# Temperaturgradient erzeugen
+values <- seq(
+  min(x_train[[variable]], na.rm = TRUE),
+  max(x_train[[variable]], na.rm = TRUE),
+  length.out = 100
+)
+
+# Referenzdatensatz 100-mal kopieren
+newdata <- reference[rep(1, length(values)), , drop = FALSE]
+rownames(newdata) <- NULL
+
+# Nur die untersuchte Variable verändern
+newdata[[variable]] <- values
+
+# Vorhersagen berechnen
+predictions <- predict(
+  model,
+  newdata = newdata,
+  type = "cloglog"
+)
+
+# Ergebnisse visualisieren
+response_data <- data.frame(
+  temperature = values,
+  prediction = as.numeric(predictions)
+)
+
+ggplot(response_data, aes(x = temperature, y = prediction)) +
+  geom_line(linewidth = 1) +
+  labs(
+    title = "Response Curve: mittlere Jahrestemperatur",
+    x = "Mittlere Jahrestemperatur",
+    y = "MaxEnt cloglog output"
+  ) +
+  theme_minimal()
+```
+
+
+
+
+
 
 
 
